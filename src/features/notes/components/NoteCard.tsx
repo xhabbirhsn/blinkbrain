@@ -42,6 +42,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     <Pressable 
       onPress={onPress} 
       style={[styles.cardContainer, { backgroundColor: cardColor }]}
+      hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
       android_ripple={{ color: 'rgba(0,0,0,0.05)' }}
     >
       {/* Frosted glass overlay */}

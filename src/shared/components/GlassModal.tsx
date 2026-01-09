@@ -79,6 +79,8 @@ export const GlassModal: React.FC<GlassModalProps> = ({
       transparent
       animationType="none"
       onRequestClose={onClose}
+      statusBarTranslucent
+      presentationStyle="overFullScreen"
     >
       <Pressable style={styles.overlay} onPress={onClose}>
         <Animated.View
@@ -129,12 +131,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    maxHeight: SCREEN_HEIGHT * 0.9,
+    height: SCREEN_HEIGHT * 0.9,
   },
   modalContent: {
     flex: 1,
   },
   modalCard: {
+    flex: 1,
     borderTopLeftRadius: theme.borderRadius.xl,
     borderTopRightRadius: theme.borderRadius.xl,
     overflow: 'hidden',
@@ -169,5 +172,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: theme.spacing.lg,
+    flex: 1,
   },
 });

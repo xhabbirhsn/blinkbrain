@@ -3,6 +3,7 @@ import { Reminder, ReminderSchedule } from '../../../domain/models/Reminder';
 import { storage, STORAGE_KEYS } from '../../../shared/storage';
 import { generateUUID } from '../../../shared/utils/uuid';
 import { calculateNextScheduledTime } from '../services/schedulingEngine';
+import { NotificationService } from '../services/notificationService';
 
 interface RemindersState {
   reminders: Reminder[];
@@ -39,8 +40,19 @@ export const useRemindersStore = create<RemindersState>((set, get) => ({
   loadReminders: async () => {
     set({ isLoading: true, error: null });
     try {
-      const reminders = await storage.getItem<Reminder[]>(STORAGE_KEYS.REMINDERS);
-      set({ reminders: reminders || [], isLoading: false });
+      const reminders = (await storage.getItem<Reminder[]>(STORAGE_KEYS.REMINDERS)) || [];
+      // On load, ensure upcoming notifications are (re)scheduled
+      const scheduled: Reminder[] = [];
+      for (const r of reminders) {
+        // Recompute next if missing
+        const base: Reminder = {
+          ...r,
+          nextScheduled: r.nextScheduled ?? (calculateNextScheduledTime(r) || undefined),
+        };
+        scheduled.push(await scheduleForReminder(base));
+      }
+      await storage.setItem(STORAGE_KEYS.REMINDERS, scheduled);
+      set({ reminders: scheduled, isLoading: false });
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to load reminders',
@@ -63,31 +75,37 @@ export const useRemindersStore = create<RemindersState>((set, get) => ({
     // Calculate next scheduled time
     newReminder.nextScheduled = calculateNextScheduledTime(newReminder) || undefined;
 
-    const reminders = [...get().reminders, newReminder];
+    // Schedule notification if applicable
+    const scheduled = await scheduleForReminder(newReminder);
+
+    const reminders = [...get().reminders, scheduled];
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
 
-    return newReminder;
+    return scheduled;
   },
 
   updateReminder: async (id: string, updates: Partial<Reminder>) => {
-    const reminders = get().reminders.map(reminder => {
-      if (reminder.id === id) {
-        const updated = { ...reminder, ...updates, updatedAt: Date.now() };
-        // Recalculate next scheduled time if schedules changed
-        if (updates.schedules || updates.isDisabled !== undefined) {
-          updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
-        }
-        return updated;
-      }
-      return reminder;
-    });
+    const reminders = get().reminders.slice();
+    const idx = reminders.findIndex(r => r.id === id);
+    if (idx === -1) return;
+
+    let updated: Reminder = { ...reminders[idx], ...updates, updatedAt: Date.now() };
+    if (updates.schedules || updates.isDisabled !== undefined) {
+      updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
+    }
+    updated = await scheduleForReminder(updated);
+    reminders[idx] = updated;
 
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
   },
 
   deleteReminder: async (id: string) => {
+    const current = get().reminders.find(r => r.id === id);
+    if (current?.scheduledNotificationId) {
+      try { await NotificationService.cancelNotification(current.scheduledNotificationId); } catch {}
+    }
     const reminders = get().reminders.filter(reminder => reminder.id !== id);
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
@@ -102,37 +120,33 @@ export const useRemindersStore = create<RemindersState>((set, get) => ({
   },
 
   addSchedule: async (reminderId: string, schedule: ReminderSchedule) => {
-    const reminders = get().reminders.map(reminder => {
-      if (reminder.id === reminderId) {
-        const updated = {
-          ...reminder,
-          schedules: [...reminder.schedules, schedule],
-          updatedAt: Date.now(),
-        };
-        updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
-        return updated;
-      }
-      return reminder;
-    });
-
+    const reminders = get().reminders.slice();
+    const idx = reminders.findIndex(r => r.id === reminderId);
+    if (idx === -1) return;
+    let updated: Reminder = {
+      ...reminders[idx],
+      schedules: [...reminders[idx].schedules, schedule],
+      updatedAt: Date.now(),
+    };
+    updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
+    updated = await scheduleForReminder(updated);
+    reminders[idx] = updated;
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
   },
 
   removeSchedule: async (reminderId: string, scheduleId: string) => {
-    const reminders = get().reminders.map(reminder => {
-      if (reminder.id === reminderId) {
-        const updated = {
-          ...reminder,
-          schedules: reminder.schedules.filter(s => s.id !== scheduleId),
-          updatedAt: Date.now(),
-        };
-        updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
-        return updated;
-      }
-      return reminder;
-    });
-
+    const reminders = get().reminders.slice();
+    const idx = reminders.findIndex(r => r.id === reminderId);
+    if (idx === -1) return;
+    let updated: Reminder = {
+      ...reminders[idx],
+      schedules: reminders[idx].schedules.filter(s => s.id !== scheduleId),
+      updatedAt: Date.now(),
+    };
+    updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
+    updated = await scheduleForReminder(updated);
+    reminders[idx] = updated;
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
   },
@@ -142,39 +156,35 @@ export const useRemindersStore = create<RemindersState>((set, get) => ({
     scheduleId: string,
     updates: Partial<ReminderSchedule>
   ) => {
-    const reminders = get().reminders.map(reminder => {
-      if (reminder.id === reminderId) {
-        const updated = {
-          ...reminder,
-          schedules: reminder.schedules.map(schedule =>
-            schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
-          ),
-          updatedAt: Date.now(),
-        };
-        updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
-        return updated;
-      }
-      return reminder;
-    });
-
+    const reminders = get().reminders.slice();
+    const idx = reminders.findIndex(r => r.id === reminderId);
+    if (idx === -1) return;
+    let updated: Reminder = {
+      ...reminders[idx],
+      schedules: reminders[idx].schedules.map(schedule =>
+        schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
+      ),
+      updatedAt: Date.now(),
+    };
+    updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
+    updated = await scheduleForReminder(updated);
+    reminders[idx] = updated;
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
   },
 
   markAsTriggered: async (id: string) => {
-    const reminders = get().reminders.map(reminder => {
-      if (reminder.id === id) {
-        const updated = {
-          ...reminder,
-          lastTriggered: Date.now(),
-          updatedAt: Date.now(),
-        };
-        // Recalculate next scheduled time
-        updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
-        return updated;
-      }
-      return reminder;
-    });
+    const reminders = get().reminders.slice();
+    const idx = reminders.findIndex(r => r.id === id);
+    if (idx === -1) return;
+    let updated: Reminder = {
+      ...reminders[idx],
+      lastTriggered: Date.now(),
+      updatedAt: Date.now(),
+    };
+    updated.nextScheduled = calculateNextScheduledTime(updated) || undefined;
+    updated = await scheduleForReminder(updated);
+    reminders[idx] = updated;
 
     await storage.setItem(STORAGE_KEYS.REMINDERS, reminders);
     set({ reminders });
@@ -184,3 +194,42 @@ export const useRemindersStore = create<RemindersState>((set, get) => ({
     return get().reminders.find(reminder => reminder.noteId === noteId);
   },
 }));
+
+// Helper: schedule or cancel the next notification for a reminder
+async function scheduleForReminder(reminder: Reminder): Promise<Reminder> {
+  try {
+    // Cancel any previously scheduled notification for this reminder
+    if (reminder.scheduledNotificationId) {
+      await NotificationService.cancelNotification(reminder.scheduledNotificationId);
+    }
+
+    if (reminder.isDisabled || !reminder.nextScheduled) {
+      return { ...reminder, scheduledNotificationId: undefined };
+    }
+
+    // Fetch note data for notification
+    const notes = await storage.getItem(STORAGE_KEYS.NOTES) || [];
+    const note = notes.find((n: any) => n.id === reminder.noteId);
+    
+    const title = note?.title || 'Reminder';
+    const body = note?.content || 'One of your notes is due now.';
+    const identifier = await NotificationService.scheduleNotification(
+      title,
+      body,
+      reminder.nextScheduled,
+      { 
+        reminderId: reminder.id, 
+        noteId: reminder.noteId,
+        countdownDuration: reminder.countdownDuration,
+        noteTitle: note?.title,
+        noteContent: note?.content,
+        attachments: JSON.stringify(note?.attachments || []),
+        codeBlocks: JSON.stringify(note?.codeBlocks || []),
+      }
+    );
+    return { ...reminder, scheduledNotificationId: identifier ?? undefined };
+  } catch (e) {
+    console.error('Failed to schedule reminder notification', e);
+    return { ...reminder, scheduledNotificationId: undefined };
+  }
+}

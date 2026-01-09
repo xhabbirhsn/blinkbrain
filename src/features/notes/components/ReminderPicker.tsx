@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,12 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { GlassButton } from '../../../shared/components';
-import { ReminderSchedule, ReminderType, DayOfWeek } from '../../../domain/models/Reminder';
+import { GlassButton, AnalogClockModal } from '../../../shared/components';
+import { ReminderSchedule, ReminderType, DayOfWeek, Reminder } from '../../../domain/models/Reminder';
 import { theme } from '../../../shared/theme/tokens';
 import { normalize, responsiveSpacing } from '../../../shared/utils/responsive';
 import { generateUUID } from '../../../shared/utils/uuid';
+import { calculateNextScheduledTime } from '../../reminders/services/schedulingEngine';
 
 interface ReminderPickerProps {
   reminderId?: string;
@@ -49,6 +50,7 @@ export const ReminderPicker: React.FC<ReminderPickerProps> = ({
   onReminderDisabledChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(!!reminderId);
+  const [nextScheduledTime, setNextScheduledTime] = useState<number | undefined>();
   
   console.log('[ReminderPicker] Rendering with:', { 
     reminderId, 
@@ -62,6 +64,67 @@ export const ReminderPicker: React.FC<ReminderPickerProps> = ({
   const [countdownDuration, setCountdownDuration] = useState(60);
   const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([]);
   const [intervalHours, setIntervalHours] = useState(1);
+  const [isClockOpen, setIsClockOpen] = useState(false);
+
+  // Compute next scheduled time for live countdown display
+  useEffect(() => {
+    if (schedules.length === 0 || isReminderDisabled) {
+      setNextScheduledTime(undefined);
+      return;
+    }
+    const tempReminder: Reminder = {
+      id: reminderId || 'temp',
+      noteId: 'temp',
+      schedules,
+      countdownDuration: countdownDuration,
+      isDisabled: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const next = calculateNextScheduledTime(tempReminder);
+    setNextScheduledTime(next ?? undefined);
+  }, [schedules, countdownDuration, isReminderDisabled, reminderId]);
+
+  const pad2 = (n: number) => n.toString().padStart(2, '0');
+
+  const formatNextFireTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return 'Not scheduled';
+    const now = Date.now();
+    const diff = Math.max(0, timestamp - now);
+    
+    if (diff === 0) {
+      return 'Due now';
+    }
+
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `in ${days}d ${(hours % 24)}h`;
+    } else if (hours > 0) {
+      return `in ${hours}h ${(minutes % 60)}m`;
+    } else if (minutes > 0) {
+      return `in ${minutes}m ${(seconds % 60)}s`;
+    } else {
+      return `in ${seconds}s`;
+    }
+  };
+
+  const formatDateWithTimezone = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    const timeStr = date.toLocaleString([], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const tz = date.toLocaleString('en-US', { timeZoneName: 'short' }).split(' ').pop() || 'UTC';
+    return `${timeStr} ${tz}`;
+  };
 
   const handleAddSchedule = () => {
     console.log('[ReminderPicker] Adding schedule:', { scheduleType, intervalHours, selectedDays });
@@ -71,18 +134,23 @@ export const ReminderPicker: React.FC<ReminderPickerProps> = ({
       type: scheduleType,
       isActive: true,
       priority: schedules.length + 1,
-      ...(scheduleType === 'daily' && { time: `${reminderTime.getHours()}:${reminderTime.getMinutes()}` }),
+      ...(scheduleType === 'once' && { 
+        startDate: reminderTime.getTime(),
+        time: `${pad2(reminderTime.getHours())}:${pad2(reminderTime.getMinutes())}` 
+      }),
+      ...(scheduleType === 'daily' && { time: `${pad2(reminderTime.getHours())}:${pad2(reminderTime.getMinutes())}` }),
       ...(scheduleType === 'hourly' && { hour: intervalHours }),
       ...(scheduleType === 'specific-time' && { 
-        time: `${reminderTime.getHours()}:${reminderTime.getMinutes()}` 
+        startDate: reminderTime.getTime(),
+        time: `${pad2(reminderTime.getHours())}:${pad2(reminderTime.getMinutes())}` 
       }),
       ...(scheduleType === 'weekly' && { 
         daysOfWeek: selectedDays,
-        time: `${reminderTime.getHours()}:${reminderTime.getMinutes()}` 
+        time: `${pad2(reminderTime.getHours())}:${pad2(reminderTime.getMinutes())}` 
       }),
       ...(scheduleType === 'alternate-day' && { 
         startDate: reminderTime.getTime(),
-        time: `${reminderTime.getHours()}:${reminderTime.getMinutes()}` 
+        time: `${pad2(reminderTime.getHours())}:${pad2(reminderTime.getMinutes())}` 
       }),
     };
 
@@ -205,15 +273,22 @@ export const ReminderPicker: React.FC<ReminderPickerProps> = ({
             <Text style={styles.configLabel}>Reminder Time</Text>
             <Pressable
               style={styles.timePicker}
-              onPress={() => {
-                const now = new Date();
-                setReminderTime(now);
-              }}
+              onPress={() => setIsClockOpen(true)}
             >
               <Text style={styles.timeText}>
                 {reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </Text>
             </Pressable>
+
+            <AnalogClockModal
+              visible={isClockOpen}
+              initialDate={reminderTime}
+              onCancel={() => setIsClockOpen(false)}
+              onConfirm={(date) => {
+                setReminderTime(date);
+                setIsClockOpen(false);
+              }}
+            />
           </View>
         )}
 
@@ -300,9 +375,29 @@ export const ReminderPicker: React.FC<ReminderPickerProps> = ({
       {/* Active Schedules List */}
       {schedules.length > 0 && (
         <View style={styles.schedulesList}>
-          <Text style={styles.sectionLabel}>
-            {`Active Schedules (${schedules.length})`}
-          </Text>
+          <View style={styles.schedulesHeader}>
+            <Text style={styles.sectionLabel}>
+              {`Active Schedules (${schedules.length})`}
+            </Text>
+            {nextScheduledTime && !isReminderDisabled && (
+              <View style={styles.nextFireBadge}>
+                <Text style={styles.nextFireText}>
+                  ⏱ {formatNextFireTime(nextScheduledTime)}
+                </Text>
+              </View>
+            )}
+          </View>
+          {nextScheduledTime && !isReminderDisabled && (
+            <View style={styles.nextFireDetails}>
+              <Text style={styles.nextFireLabel}>🎯 Next Fire</Text>
+              <Text style={styles.nextFireDate}>
+                {formatDateWithTimezone(nextScheduledTime)}
+              </Text>
+              <Text style={styles.countdownLabel}>
+                ⏳ Countdown: {countdownDuration} seconds
+              </Text>
+            </View>
+          )}
           {schedules.map((schedule, index) => (
             <View key={schedule.id} style={styles.scheduleItem}>
               <View style={styles.scheduleInfo}>
@@ -498,6 +593,49 @@ const styles = StyleSheet.create({
   },
   schedulesList: {
     marginTop: responsiveSpacing.md,
+  },
+  schedulesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: responsiveSpacing.md,
+  },
+  nextFireBadge: {
+    backgroundColor: 'rgba(46, 213, 115, 0.15)',
+    paddingHorizontal: responsiveSpacing.sm,
+    paddingVertical: responsiveSpacing.xs,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 213, 115, 0.3)',
+  },
+  nextFireText: {
+    color: '#2ed573',
+    fontSize: normalize(11),
+    fontWeight: '600',
+  },
+  nextFireDetails: {
+    backgroundColor: 'rgba(47, 128, 237, 0.1)',
+    padding: responsiveSpacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: responsiveSpacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: '#2f80ed',
+  },
+  nextFireLabel: {
+    color: theme.colors.accent.primary,
+    fontSize: normalize(12),
+    fontWeight: '700',
+    marginBottom: responsiveSpacing.xs,
+  },
+  nextFireDate: {
+    color: theme.colors.text.primary,
+    fontSize: normalize(13),
+    fontWeight: '600',
+    marginBottom: responsiveSpacing.xs,
+  },
+  countdownLabel: {
+    color: theme.colors.text.tertiary,
+    fontSize: normalize(11),
   },
   scheduleItem: {
     flexDirection: 'row',

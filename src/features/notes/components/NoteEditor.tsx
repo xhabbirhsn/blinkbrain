@@ -104,8 +104,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       style={styles.container}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={true}
-      keyboardShouldPersistTaps="handled"
+      keyboardShouldPersistTaps="always"
       scrollEnabled={true}
+      keyboardDismissMode="on-drag"
     >
         <Text style={styles.heading}>
           {note ? 'Edit Note' : 'New Note'}

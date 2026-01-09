@@ -13,7 +13,7 @@ import { normalize, responsiveSpacing, getSafePadding } from '../../../shared/ut
 import { useNotesStore } from '../store/notesStore';
 import { useRemindersStore } from '../../reminders/store/remindersStore';
 import { NoteCard } from '../components/NoteCard';
-import { GlassButton, GlassModal, ConfirmDialog } from '../../../shared/components';
+import { GlassButton, GlassModal, ConfirmDialog, useFlashMessage } from '../../../shared/components';
 import { NoteEditor } from '../components/NoteEditor';
 import { Note, NoteAttachment, CodeBlock } from '../../../domain/models/Note';
 import { ReminderSchedule } from '../../../domain/models/Reminder';
@@ -33,10 +33,13 @@ export const NotesListScreen: React.FC = () => {
   } = useNotesStore();
 
   const {
+    loadReminders,
     createReminder,
     updateReminder,
     deleteReminder,
   } = useRemindersStore();
+
+  const { isVisible: isFlashVisible } = useFlashMessage();
 
   const [isEditorVisible, setIsEditorVisible] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | undefined>();
@@ -48,6 +51,7 @@ export const NotesListScreen: React.FC = () => {
 
   useEffect(() => {
     loadNotes();
+    loadReminders();
   }, []);
 
   useEffect(() => {
@@ -146,8 +150,9 @@ export const NotesListScreen: React.FC = () => {
   const safePadding = getSafePadding();
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.primary} />
+    <>
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.primary} />
 
       <View style={[styles.safeArea, { paddingTop: safePadding.top }]}>
         {/* Large Title Header (matching snapshot) */}
@@ -156,18 +161,20 @@ export const NotesListScreen: React.FC = () => {
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchWrapper}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search notes..."
-              placeholderTextColor={theme.colors.text.tertiary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+        {!isFlashVisible && (
+          <View style={styles.searchContainer}>
+            <View style={styles.searchWrapper}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search notes..."
+                placeholderTextColor={theme.colors.text.tertiary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Notes List */}
         <FlatList
@@ -194,36 +201,40 @@ export const NotesListScreen: React.FC = () => {
         />
 
         {/* Floating Action Button (matching snapshot's bottom nav style) */}
-        <View style={styles.fabContainer}>
-          <Pressable 
-            style={styles.fab}
-            onPress={handleCreateNote}
-            android_ripple={{ color: 'rgba(255,255,255,0.3)' }}
-          >
-            <Text style={styles.fabIcon}>+</Text>
-          </Pressable>
-        </View>
+        {!isFlashVisible && (
+          <View style={styles.fabContainer}>
+            <Pressable 
+              style={styles.fab}
+              onPress={handleCreateNote}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              android_ripple={{ color: 'rgba(255,255,255,0.3)' }}
+            >
+              <Text style={styles.fabIcon}>+</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
 
-        {/* Editor Modal */}
-        <GlassModal
-          visible={isEditorVisible}
-          onClose={() => {
+      {/* Editor Modal */}
+      <GlassModal
+        visible={isEditorVisible}
+        onClose={() => {
+          setIsEditorVisible(false);
+          setSelectedNote(undefined);
+        }}
+      >
+        <NoteEditor
+          note={selectedNote}
+          onSave={handleSaveNote}
+          onCancel={() => {
             setIsEditorVisible(false);
             setSelectedNote(undefined);
           }}
-        >
-          <NoteEditor
-            note={selectedNote}
-            onSave={handleSaveNote}
-            onCancel={() => {
-              setIsEditorVisible(false);
-              setSelectedNote(undefined);
-            }}
-          />
-        </GlassModal>
+        />
+      </GlassModal>
 
-        {/* Delete Confirmation Dialog */}
-        <ConfirmDialog
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
           visible={deleteConfirmVisible}
           title="Delete Note?"
           message={`Are you sure you want to delete "${noteToDelete?.title}"? This note will be moved to trash and can be recovered within 30 days.`}
@@ -237,7 +248,7 @@ export const NotesListScreen: React.FC = () => {
           }}
         />
       </View>
-    </View>
+    </>
   );
 };
 

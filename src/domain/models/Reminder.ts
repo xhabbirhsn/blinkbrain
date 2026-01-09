@@ -27,6 +27,7 @@ export interface Reminder {
   isDisabled: boolean;
   lastTriggered?: number;
   nextScheduled?: number;
+  scheduledNotificationId?: string;
   createdAt: number;
   updatedAt: number;
 }

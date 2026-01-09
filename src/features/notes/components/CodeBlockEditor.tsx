@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, TextInput } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { GlassButton, GlassInput, GlassModal } from '../../../shared/components';
 import { CodeBlock } from '../../../domain/models/Note';
 import { theme } from '../../../shared/theme/tokens';
@@ -34,6 +35,7 @@ export const CodeBlockEditor: React.FC<CodeBlockEditorProps> = ({
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState('javascript');
+  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
 
   const handleAddCodeBlock = () => {
     if (!code.trim()) return;
@@ -41,12 +43,13 @@ export const CodeBlockEditor: React.FC<CodeBlockEditorProps> = ({
     const newCodeBlock: CodeBlock = {
       id: generateUUID(),
       language,
-      code: code.trim(),
+      code: code,
       addedAt: Date.now(),
     };
 
     onAddCodeBlock(newCodeBlock);
     setCode('');
+    setLanguage('javascript');
     setIsModalVisible(false);
   };
 
@@ -76,8 +79,10 @@ export const CodeBlockEditor: React.FC<CodeBlockEditorProps> = ({
                   <Text style={styles.removeButtonText}>✕</Text>
                 </Pressable>
               </View>
-              <ScrollView horizontal style={styles.codeScrollView}>
-                <Text style={styles.codeText}>{block.code}</Text>
+              <ScrollView style={styles.codeScrollView} nestedScrollEnabled showsVerticalScrollIndicator={true}>
+                <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={true}>
+                  <Text style={styles.codeText}>{block.code}</Text>
+                </ScrollView>
               </ScrollView>
             </View>
           ))}
@@ -86,60 +91,114 @@ export const CodeBlockEditor: React.FC<CodeBlockEditorProps> = ({
 
       <GlassModal
         visible={isModalVisible}
-        onClose={() => setIsModalVisible(false)}
+        onClose={() => {
+          setIsModalVisible(false);
+          setCode('');
+          setLanguage('javascript');
+        }}
         title="Add Code Block"
       >
-        <View style={styles.modalContent}>
-          <Text style={styles.modalLabel}>Language</Text>
-          <ScrollView horizontal style={styles.languageSelector}>
-            {LANGUAGES.map((lang) => (
-              <Pressable
-                key={lang}
-                onPress={() => setLanguage(lang)}
-                style={[
-                  styles.languageChip,
-                  language === lang && styles.languageChipSelected,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.languageChipText,
-                    language === lang && styles.languageChipTextSelected,
-                  ]}
+        <ScrollView 
+          style={styles.modalScrollView}
+          keyboardShouldPersistTaps="always"
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalLabel}>Language</Text>
+            
+            <Pressable
+              onPress={() => {
+                console.log('Dropdown clicked, current state:', showLanguagePicker);
+                setShowLanguagePicker(!showLanguagePicker);
+              }}
+              style={styles.languageDropdown}
+            >
+              <View style={styles.dropdownInner}>
+                <Text style={styles.selectedLanguage}>{language}</Text>
+                <Text style={styles.dropdownArrow}>{showLanguagePicker ? '▲' : '▼'}</Text>
+              </View>
+            </Pressable>
+
+            {showLanguagePicker && (
+              <View style={styles.languagePickerContainer}>
+                <ScrollView 
+                  style={styles.languagePicker} 
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="always"
                 >
-                  {lang}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+                  {LANGUAGES.map((lang) => (
+                    <Pressable
+                      key={lang}
+                      onPress={() => {
+                        console.log('Language selected:', lang);
+                        setLanguage(lang);
+                        setShowLanguagePicker(false);
+                      }}
+                      style={[
+                        styles.languageOption,
+                        language === lang && styles.languageOptionSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.languageOptionText,
+                          language === lang && styles.languageOptionTextSelected,
+                        ]}
+                      >
+                        {lang}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
-          <GlassInput
-            label="Code"
-            value={code}
-            onChangeText={setCode}
-            placeholder="Paste your code here..."
-            multiline
-            numberOfLines={10}
-            containerStyle={styles.codeInput}
-          />
+            <Text style={[styles.modalLabel, { marginTop: theme.spacing.md }]}>Code</Text>
+            
+            <View style={styles.codeInputContainer}>
+              <ScrollView 
+                style={styles.codeScrollContainer}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="always"
+              >
+                <TextInput
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="Paste or type your code here..."
+                  placeholderTextColor={theme.colors.text.tertiary}
+                  multiline
+                  style={styles.codeInputField}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textAlignVertical="top"
+                  scrollEnabled={false}
+                />
+              </ScrollView>
+            </View>
 
-          <View style={styles.modalActions}>
-            <GlassButton
-              onPress={() => setIsModalVisible(false)}
-              variant="outline"
-              style={styles.modalButton}
-            >
-              Cancel
-            </GlassButton>
-            <GlassButton
-              onPress={handleAddCodeBlock}
-              variant="primary"
-              style={styles.modalButton}
-            >
-              Add
-            </GlassButton>
+            <View style={styles.modalActions}>
+              <GlassButton
+                onPress={() => {
+                  setIsModalVisible(false);
+                  setCode('');
+                  setLanguage('javascript');
+                }}
+                variant="outline"
+                style={styles.modalButton}
+              >
+                Cancel
+              </GlassButton>
+              <GlassButton
+                onPress={handleAddCodeBlock}
+                variant="primary"
+                style={styles.modalButton}
+              >
+                Add
+              </GlassButton>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </GlassModal>
     </View>
   );
@@ -191,7 +250,7 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.md,
   },
   codeScrollView: {
-    maxHeight: 200,
+    maxHeight: 300,
   },
   codeText: {
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
@@ -199,8 +258,11 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     lineHeight: theme.typography.sizes.sm * 1.5,
   },
+  modalScrollView: {
+    flex: 1,
+  },
   modalContent: {
-    minHeight: 400,
+    paddingBottom: theme.spacing.xl,
   },
   modalLabel: {
     color: theme.colors.text.secondary,
@@ -208,36 +270,86 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.medium,
     marginBottom: theme.spacing.sm,
   },
-  languageSelector: {
-    marginBottom: theme.spacing.md,
-  },
-  languageChip: {
-    backgroundColor: theme.colors.glass.secondary,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    marginRight: theme.spacing.sm,
+  languageDropdown: {
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: theme.colors.border.subtle,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.glass.primary,
   },
-  languageChipSelected: {
-    backgroundColor: theme.colors.accent.primary,
-    borderColor: theme.colors.accent.primary,
+  dropdownInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    minHeight: 48,
   },
-  languageChipText: {
+  selectedLanguage: {
+    color: theme.colors.text.primary,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.medium,
+    textTransform: 'capitalize',
+  },
+  dropdownArrow: {
     color: theme.colors.text.secondary,
     fontSize: theme.typography.sizes.sm,
   },
-  languageChipTextSelected: {
-    color: theme.colors.text.primary,
+  languagePickerContainer: {
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border.subtle,
+    marginBottom: theme.spacing.md,
+    maxHeight: 200,
+    backgroundColor: theme.colors.glass.secondary,
+  },
+  languagePicker: {
+    maxHeight: 200,
+  },
+  languageOption: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border.subtle,
+  },
+  languageOptionSelected: {
+    backgroundColor: theme.colors.accent.primary + '20',
+  },
+  languageOptionText: {
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.sizes.md,
+    textTransform: 'capitalize',
+  },
+  languageOptionTextSelected: {
+    color: theme.colors.accent.primary,
     fontWeight: theme.typography.weights.semibold,
   },
-  codeInput: {
-    marginBottom: theme.spacing.md,
+  codeInputContainer: {
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.border.subtle,
+    marginBottom: theme.spacing.lg,
+    backgroundColor: theme.colors.glass.primary,
+    height: 500,
+  },
+  codeScrollContainer: {
+    flex: 1,
+  },
+  codeInputField: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: theme.colors.text.primary,
+    fontSize: theme.typography.sizes.sm,
+    lineHeight: theme.typography.sizes.sm * 1.6,
+    padding: theme.spacing.md,
+    minHeight: 500,
   },
   modalActions: {
     flexDirection: 'row',
     gap: theme.spacing.md,
+    marginTop: theme.spacing.md,
   },
   modalButton: {
     flex: 1,

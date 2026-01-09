@@ -78,6 +78,17 @@ export const NotificationService = {
   ): Promise<string | null> {
     try {
       const Notifications = await import('expo-notifications');
+      // Ensure channel exists on Android
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Default',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          sound: 'default',
+        });
+      }
       
       const identifier = await Notifications.scheduleNotificationAsync({
         content: {
@@ -192,6 +203,17 @@ export const configureNativeNotifications = async () => {
         shouldShowList: true,
       }),
     });
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        sound: 'default',
+      });
+    }
   } catch (error) {
     console.error('Failed to configure native notifications:', error);
   }
